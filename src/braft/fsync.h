@@ -30,7 +30,13 @@ inline int raft_fsync(int fd) {
     if (FLAGS_raft_use_fsync_rather_than_fdatasync) {
         return fsync(fd);
     } else {
+#if defined(OS_LINUX)
         return fdatasync(fd);
+#elif defined(OS_MACOSX)
+        return fsync(fd);
+#else
+    #error Not implemented
+#endif
     }
 }
 

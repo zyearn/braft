@@ -1,8 +1,12 @@
 cmake_minimum_required(VERSION 2.8.10)
 project(braft C CXX)
 
+# Enable MACOSX_RPATH. Run "cmake --help-policy CMP0042" for policy details.
+cmake_policy(SET CMP0042 NEW)
+
 #option(EXAMPLE_LINK_SO "Whether examples are linked dynamically" OFF)
 option(BRPC_WITH_GLOG "With glog" OFF)
+option(BUILD_UNIT_TESTS "Whether to build unit tests" OFF)
 
 set(WITH_GLOG_VAL "0")
 if(BRPC_WITH_GLOG)
@@ -63,6 +67,17 @@ if (NOT PROTOBUF_PROTOC_EXECUTABLE)
     set (PROTOBUF_PROTOC_EXECUTABLE "${PROTO_LIB_DIR}/../bin/protoc")
 endif()
 
+find_library(CRYPTO_LIB NAMES crypto)
+if (NOT CRYPTO_LIB)
+    message(FATAL_ERROR "Fail to find crypto")
+endif()
+
+find_path(SSL_INCLUDE_PATH NAMES openssl/ssl.h)
+find_library(SSL_LIB NAMES ssl)
+if ((NOT SSL_INCLUDE_PATH) OR (NOT SSL_LIB))
+    message(FATAL_ERROR "Fail to find ssl")
+endif()
+
 include_directories(
         ${GFLAGS_INCLUDE_PATH}
         ${PROTOBUF_INCLUDE_DIRS}
@@ -70,33 +85,36 @@ include_directories(
         ${BRPC_INCLUDE_PATH}
         )
 
+set(DYNAMIC_LIB
+    ${BRPC_LIB}
+    ${GFLAGS_LIB}
+    ${PROTOBUF_LIBRARY}
+    ${LEVELDB_LIB}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${SSL_LIB}
+    ${CRYPTO_LIB}
+    dl
+    z
+)
 if(BRPC_WITH_GLOG)
-    set(DYNAMIC_LIB
-        ${BRPC_LIB}
-        ${GFLAGS_LIB}
-        ${GLOG_LIB}
-        ${PROTOBUF_LIBRARY}
-        ${LEVELDB_LIB}
-        ${CMAKE_THREAD_LIBS_INIT}
-        rt
-        ssl
-        crypto
-        dl
-        z
-        )
-else()
-    set(DYNAMIC_LIB
-        ${BRPC_LIB}
-        ${GFLAGS_LIB}
-        ${PROTOBUF_LIBRARY}
-        ${LEVELDB_LIB}
-        ${CMAKE_THREAD_LIBS_INIT}
-        rt
-        ssl
-        crypto
-        dl
-        z
-	)
+    set(DYNAMIC_LIB ${DYNAMIC_LIB} ${GLOG_LIB})
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(DYNAMIC_LIB ${DYNAMIC_LIB} rt)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(DYNAMIC_LIB ${DYNAMIC_LIB}
+        pthread
+        "-framework CoreFoundation"
+        "-framework CoreGraphics"
+        "-framework CoreData"
+        "-framework CoreText"
+        "-framework Security"
+        "-framework Foundation"
+        "-Wl,-U,_MallocExtension_ReleaseFreeMemory"
+        "-Wl,-U,_ProfilerStart"
+        "-Wl,-U,_ProfilerStop"
+        "-Wl,-U,_RegisterThriftProtocol")
 endif()
 
 # for *.so
@@ -151,7 +169,15 @@ execute_process(
     OUTPUT_VARIABLE BRAFT_REVISION
 )
 
-set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -DBRPC_WITH_GLOG=${WITH_GLOG_VAL} -DGFLAGS_NS=${GFLAGS_NS}")
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    include(CheckFunctionExists)
+    CHECK_FUNCTION_EXISTS(clock_gettime HAVE_CLOCK_GETTIME)
+    if(NOT HAVE_CLOCK_GETTIME)
+        set(DEFINE_CLOCK_GETTIME "-DNO_CLOCK_GETTIME_IN_MAC")
+    endif()
+endif()
+
+set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} ${DEFINE_CLOCK_GETTIME} -DBRPC_WITH_GLOG=${WITH_GLOG_VAL} -DGFLAGS_NS=${GFLAGS_NS}")
 set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -DBTHREAD_USE_FAST_PTHREAD_MUTEX -D__const__= -D_GNU_SOURCE -DUSE_SYMBOLIZE -DNO_TCMALLOC -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DBRAFT_REVISION=\\\"${BRAFT_REVISION}\\\" -D__STRICT_ANSI__")
 set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -g ${DEBUG_SYMBOL}")
 set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -msse4 -msse4.2")

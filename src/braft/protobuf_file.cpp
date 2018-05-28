@@ -14,10 +14,9 @@
 
 // Authors: Wang,Yao(wangyao02@baidu.com)
 
+#include "braft/protobuf_file.h"
 #include <butil/iobuf.h>
 #include <butil/sys_byteorder.h>
-
-#include "braft/protobuf_file.h"
 
 namespace braft {
 

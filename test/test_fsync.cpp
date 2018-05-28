@@ -43,7 +43,12 @@ TEST_F(FsyncTest, benchmark_append) {
             ASSERT_NE(-1, nw);
             left -= nw;
         }
+#if defined(OS_LINUX)
         fdatasync(fd);
+#elif defined(OS_MACOSX)
+        fsync(fd);
+#endif
+
     }
     timer.stop();
     LOG(INFO) << "fdatasync takes " << timer.u_elapsed();
